@@ -11,17 +11,19 @@ mod config_loader;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let config = config_loader::load_config().expect("Failed to load config");
-    let get_image_info = Arc::new(rule::generate_match_fn(config));
-    HttpServer::new(move || {
-        let get_image_info = get_image_info.clone();
-        App::new().route("/img", web::get().to(move |req| handle_request(req, get_image_info.clone())))
-    })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
+    unsafe {
+        let get_image_info = rule::generate_match_fn(config);
+        HttpServer::new(move || {
+            let get_image_info = get_image_info.clone();
+            App::new().route("/img", web::get().to(move |req| handle_request(req, get_image_info)))
+        })
+        .bind("127.0.0.1:8080")?
+        .run()
+        .await
+    }
 }
 
-async fn handle_request(req: actix_web::HttpRequest, get_image_info: Arc<Box<dyn Fn(&Ipv4) -> Option<ImageInfo>>>) -> impl Responder {
+async fn handle_request(req: actix_web::HttpRequest, get_image_info: Arc<dyn Fn(&Ipv4) -> Option<ImageInfo>> ) -> impl Responder {
     let ip_addr = match req.peer_addr() {
         Some(addr) => addr.ip(),
         None => return HttpResponse::BadRequest().finish(),

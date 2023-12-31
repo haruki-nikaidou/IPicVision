@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::ip::Ipv4;
 use rand::Rng;
 use serde::{Serialize, Deserialize, Serializer, Deserializer, ser::SerializeStruct};
@@ -8,7 +10,7 @@ pub enum ImageInfo {
     Url(String)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum TrafficMatchRule {
     #[serde(rename = "ipv4_exact")]
     Ipv4Exact(Ipv4),
@@ -23,7 +25,7 @@ pub enum TrafficMatchRule {
     Region(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename = "image")]
 pub enum ImageInfoSelectStrategy {
     #[serde(rename = "one")]
@@ -88,8 +90,8 @@ fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
     images[index].clone()
 }
 
-pub fn generate_match_fn(rule_list: TrafficMatcherList) -> Box<TrafficMatchFn> {
-    Box::new(move |ip| {
+pub fn generate_match_fn(rule_list: TrafficMatcherList) -> Arc<TrafficMatchFn> {
+    Arc::new(move |ip| {
         for TrafficMatcher (rule, strategy) in rule_list.iter() {
             match rule {
                 TrafficMatchRule::Ipv4Exact(rule) => {

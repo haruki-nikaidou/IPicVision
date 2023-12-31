@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct Ipv4 {
     address: [u8;4]
 }
