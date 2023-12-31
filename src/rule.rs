@@ -92,58 +92,21 @@ fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
 
 pub fn generate_match_fn(rule_list: TrafficMatcherList) -> Arc<TrafficMatchFn> {
     Arc::new(move |ip| {
-        for TrafficMatcher (rule, strategy) in rule_list.iter() {
-            match rule {
-                TrafficMatchRule::Ipv4Exact(rule) => {
-                    if match_ipv4_exact(ip, rule) {
-                        match strategy {
-                            ImageInfoSelectStrategy::FixToOne(info) => {
-                                return Some(info.clone());
-                            },
-                            ImageInfoSelectStrategy::Random(images) => {
-                                return Some(random_select(images));
-                            }
-                        }
-                    }
-                },
-                TrafficMatchRule::Ipv4Masked(rule, mask) => {
-                    if match_ipv4_masked(ip, rule, mask) {
-                        match strategy {
-                            ImageInfoSelectStrategy::FixToOne(info) => {
-                                return Some(info.clone());
-                            },
-                            ImageInfoSelectStrategy::Random(images) => {
-                                return Some(random_select(images));
-                            }
-                        }
-                    }
-                },
-                TrafficMatchRule::Ipv4Cidr(rule, cidr) => {
-                    if match_ipv4_cidr(ip, rule, cidr.clone()) {
-                        match strategy {
-                            ImageInfoSelectStrategy::FixToOne(info) => {
-                                return Some(info.clone());
-                            },
-                            ImageInfoSelectStrategy::Random(images) => {
-                                return Some(random_select(images));
-                            }
-                        }
-                    }
-                },
-                TrafficMatchRule::Region(rule) => {
-                    if match_region(ip, rule) {
-                        match strategy {
-                            ImageInfoSelectStrategy::FixToOne(info) => {
-                                return Some(info.clone());
-                            },
-                            ImageInfoSelectStrategy::Random(images) => {
-                                return Some(random_select(images));
-                            }
-                        }
-                    }
-                }
+        for TrafficMatcher(rule, strategy) in rule_list.iter() {
+            let is_match = match rule {
+                TrafficMatchRule::Ipv4Exact(rule) => match_ipv4_exact(ip, rule),
+                TrafficMatchRule::Ipv4Masked(rule, mask) => match_ipv4_masked(ip, rule, mask),
+                TrafficMatchRule::Ipv4Cidr(rule, cidr) => match_ipv4_cidr(ip, rule, *cidr),
+                TrafficMatchRule::Region(rule) => match_region(ip, rule),
+            };
+
+            if is_match {
+                return match strategy {
+                    ImageInfoSelectStrategy::FixToOne(info) => Some(info.clone()),
+                    ImageInfoSelectStrategy::Random(images) => Some(random_select(images)),
+                };
             }
         }
-        return None;
+        None
     })
 }
