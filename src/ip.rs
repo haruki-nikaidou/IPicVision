@@ -1,3 +1,5 @@
+use serde::{Serialize, Deserialize};
+
 #[derive(PartialEq)]
 pub struct Ipv4 {
     address: [u8;4]
@@ -21,7 +23,7 @@ impl Ipv4 {
             address: addr
         }
     }
-    pub fn from_string(ip_str: &String) -> Option<Self> {
+    pub fn from_string(ip_str: &str) -> Option<Self> {
         let mut result: [u8;4] = [0;4];
         let mut i = 0;
         for octet in ip_str.split(".") {
@@ -46,5 +48,25 @@ impl Ipv4 {
             i += 1;
         }
         result
+    }
+}
+
+impl Serialize for Ipv4 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+            Ok(serializer.serialize_str(&self.address.iter().map(|x| x.to_string()).collect::<Vec<String>>().join("."))?)
+    }
+}
+
+impl<'de> Deserialize<'de> for Ipv4 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de> {
+            let s = String::deserialize(deserializer)?;
+            match Ipv4::from_string(&s) {
+                Some(ip) => Ok(ip),
+                None => Err(serde::de::Error::custom("invalid ipv4 address"))
+            }
     }
 }
