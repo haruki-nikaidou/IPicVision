@@ -37,7 +37,7 @@ pub enum ImageInfoSelectStrategy {
 
 pub struct TrafficMatcher (TrafficMatchRule, ImageInfoSelectStrategy);
 pub type TrafficMatcherList = Vec<TrafficMatcher>;
-pub type TrafficMatchFn = dyn Fn(&Ipv4) -> Option<ImageInfo>;
+pub type TrafficMatchFn = dyn (Fn(&Ipv4) -> Option<ImageInfo>) + Send + Sync + 'static;
 
 impl Serialize for TrafficMatcher {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
