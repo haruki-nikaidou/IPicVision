@@ -1,6 +1,7 @@
 use ipinfo::{self, IpInfoConfig, IpInfo};
 
 use crate::ip::Ipv4;
+use tracing::{warn, info, error};
 
 /// Token for ipinfo.io
 const IP_INFO_TOKEN:&str = "";
@@ -9,7 +10,9 @@ const IP_INFO_TOKEN:&str = "";
 const GEO_ENABLED: bool = false;
 
 pub async fn get_ip_country(ip: &Ipv4) -> Option<String> {
+    info!("Getting ip info for {}", ip.to_string());
     if !GEO_ENABLED {
+        warn!("Geoip feature is not enabled but is used. Please enable it in geo.rs");
         return None;
     }
     let config = IpInfoConfig {
@@ -27,7 +30,7 @@ pub async fn get_ip_country(ip: &Ipv4) -> Option<String> {
             Some(info.country)
         },
         Err(e) => {
-            println!("Failed to get ip info: {:?}", e);
+            error!("Failed to get ip info: {:?}", e);
             None
         }
     }
