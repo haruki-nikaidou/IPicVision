@@ -1,6 +1,6 @@
 use actix_web::{web, App, HttpServer};
 use handle_request::handle_request;
-use tracing::info;
+use tracing::{info, error};
 
 mod config_loader;
 mod ip;
@@ -13,7 +13,13 @@ const LISTEN_ADDR: &str = "127.0.0.1:8080";
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     info!("Starting server at {}", LISTEN_ADDR);
-    let config = config_loader::load_config().expect("Failed to load config");
+    let config = match config_loader::load_config() {
+        Ok(config) => config,
+        Err(e) => {
+            error!("Failed to load config: {:?}", e);
+            return Ok(());
+        }
+    };
 
     let get_image_info = rule::generate_match_fn(config);
     info!("Config loaded");
