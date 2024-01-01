@@ -49,6 +49,9 @@ impl Ipv4 {
         }
         result
     }
+    pub fn to_string(&self) -> String {
+        self.address.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(".")
+    }
 }
 
 impl Serialize for Ipv4 {

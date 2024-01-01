@@ -1,11 +1,13 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use ip::Ipv4;
-use rule::ImageInfo;
-use std::sync::Arc;
+use actix_web::{web, App, HttpServer};
+use handle_request::handle_request;
 
 mod config_loader;
 mod ip;
 mod rule;
+mod handle_request;
+mod geo;
+
+const LISTEN_ADDR: &str = "127.0.0.1:8080";
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -19,41 +21,9 @@ async fn main() -> std::io::Result<()> {
             web::get().to(move |req| handle_request(req, get_image_info.clone())),
         )
     })
-    .bind("127.0.0.1:8080")?
+    .bind(LISTEN_ADDR)?
     .run()
     .await
 }
 
-async fn handle_request(
-    req: actix_web::HttpRequest,
-    get_image_info: Arc<dyn Fn(&Ipv4) -> Option<ImageInfo>>,
-) -> impl Responder {
-    let ip_addr = match req.peer_addr() {
-        Some(addr) => addr.ip(),
-        None => return HttpResponse::BadRequest().finish(),
-    };
 
-    let ip_addr = match ip_addr {
-        std::net::IpAddr::V4(ipv4) => ip::Ipv4::from_string(ipv4.to_string().as_str()).unwrap(),
-        std::net::IpAddr::V6(_) => return HttpResponse::BadRequest().finish(),
-    };
-
-    if let Some(info) = get_image_info(&ip_addr) {
-        match info {
-            ImageInfo::Path(path) => {
-                let file_content = match std::fs::read(&path) {
-                    Ok(content) => content,
-                    Err(_) => return HttpResponse::NotFound().finish(),
-                };
-                HttpResponse::Ok()
-                    .content_type("image/png")
-                    .body(file_content)
-            }
-            ImageInfo::Url(url) => HttpResponse::Found()
-                .insert_header(("Location", url))
-                .finish(),
-        }
-    } else {
-        HttpResponse::NotFound().finish()
-    }
-}

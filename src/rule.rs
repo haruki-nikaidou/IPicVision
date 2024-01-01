@@ -81,7 +81,14 @@ fn match_ipv4_cidr(ip: &Ipv4, rule: &Ipv4, cidr: u8) -> bool {
 }
 
 fn match_region(_ip: &Ipv4, _rule: &String) -> bool {
-    todo!()
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let geo_ip_result = rt.block_on(crate::geo::get_ip_country(_ip));
+    match geo_ip_result {
+        Some(country) => {
+            country == *_rule
+        },
+        None => false
+    }
 }
 
 fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
