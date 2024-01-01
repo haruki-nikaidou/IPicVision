@@ -10,6 +10,15 @@ mod geo;
 
 const LISTEN_ADDR: &str = "127.0.0.1:8080";
 
+fn setup_tracing() {
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .with_target(false)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     info!("Starting server at {}", LISTEN_ADDR);
