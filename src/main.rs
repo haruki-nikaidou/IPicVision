@@ -10,8 +10,6 @@ mod rule;
 mod handle_request;
 mod geo;
 
-const LISTEN_ADDR: &str = "127.0.0.1:8080";
-
 fn setup_tracing() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
@@ -32,10 +30,10 @@ async fn main() -> std::io::Result<()> {
             return Ok(());
         }
     };
-
+    let listen_addr = config.listen_addr.clone();
+    info!("Listening on {}", &listen_addr);
     let get_image_info = rule::generate_match_fn(config);
     info!("Config loaded");
-    info!("Listening on {}", LISTEN_ADDR);
     HttpServer::new(move || {
         let get_image_info = get_image_info.clone();
         App::new().route(
@@ -43,7 +41,7 @@ async fn main() -> std::io::Result<()> {
             web::get().to(move |req| handle_request(req, get_image_info.clone())),
         )
     })
-    .bind(LISTEN_ADDR)?
+    .bind(listen_addr)?
     .run()
     .await
 }
