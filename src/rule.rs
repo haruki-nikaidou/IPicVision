@@ -32,7 +32,7 @@ pub enum TrafficMatchRule {
     #[serde(rename = "ipv6_default")]
     Ipv6Default,
 
-    #[serde(rename = "region_default")]
+    #[serde(rename = "default")]
     Default,
 }
 
