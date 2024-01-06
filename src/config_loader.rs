@@ -9,7 +9,7 @@ const CONFIG_PATH: &str = "./config.json";
 pub struct Config {
     pub traffic_matchers: TrafficMatcherList,
     pub ip_info_enable: bool,
-    pub ip_info_token: String,
+    pub ip_info_token: Option<String>,
     pub listen_addr: String,
 }
 

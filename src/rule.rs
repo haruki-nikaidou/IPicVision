@@ -1,11 +1,10 @@
 use std::sync::Arc;
 use std::net::{IpAddr, Ipv4Addr};
-use std::ops::DerefMut;
-use ipinfo::IpInfo;
 use rand::Rng;
 use serde::{Serialize, Deserialize, Serializer, Deserializer, ser::SerializeStruct};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use crate::config_loader::Config;
+use crate::geo::get_ip_country;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum ImageInfo {
@@ -49,7 +48,7 @@ pub enum ImageInfoSelectStrategy {
 
 pub struct TrafficMatcher (TrafficMatchRule, ImageInfoSelectStrategy);
 pub type TrafficMatcherList = Vec<TrafficMatcher>;
-pub type TrafficMatchFn = dyn (FnMut(&IpAddr) -> Option<ImageInfo>) + Send + Sync + 'static;
+pub type TrafficMatchFn = dyn (Fn(&IpAddr) -> Option<ImageInfo>) + Send + Sync + 'static;
 
 impl Serialize for TrafficMatcher {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -105,23 +104,22 @@ fn match_ipv4_cidr(ip: &Ipv4Addr, rule: &Ipv4Addr, cidr: u8) -> bool {
     (ip_int & mask) == (rule_int & mask)
 }
 
-fn match_region(_ip: &IpAddr, _rule: &String, client: &mut Option<IpInfo>) -> bool {
+fn match_region(_ip: &IpAddr, _rule: &String, enable: bool, token: &String) -> bool {
     info!("Getting ip info for {}", _ip.to_string());
-    match client {
-        Some(client) => {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let geo_ip_result = rt.block_on(crate::geo::get_ip_country(_ip, client));
-            match geo_ip_result {
-                Some(country) => {
-                    info!("Got ip info for {}: {}", _ip.to_string(), country);
-                    country == *_rule
-                },
-                None => false
-            }
+    if !enable {
+        warn!("Ip info is not enabled");
+        return false;
+    }
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let country =  rt.block_on(get_ip_country(_ip, token));
+    match country {
+        Some(country) => {
+            info!("Got ip info for {}: {}", _ip.to_string(), country);
+            country == *_rule
         },
         None => {
-            warn!("Ip info client is not configured");
-            return false;
+            error!("Failed to get ip info for {}", _ip.to_string());
+            false
         }
     }
 }
@@ -134,17 +132,13 @@ fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
 
 pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
     let rule_list = config.traffic_matchers;
-    let enable_geo = config.ip_info_enable;
-    let geo_token = config.ip_info_token;
-    let ip_info_config = ipinfo::IpInfoConfig {
-        token: Some(geo_token),
-        ..Default::default()
-    };
-    let mut ip_info = if enable_geo {
-        Some(IpInfo::new(ip_info_config).expect("Ip Info should construct"))
-    } else {
-        None
-    };
+    let enable = config.ip_info_enable;
+    let token = config.ip_info_token;
+    if enable && token.is_none() {
+        error!("Ip info is enabled but token is not configured");
+        panic!();
+    }
+    let token = token.unwrap();
     Arc::new(move |ip| {
         for TrafficMatcher(rule, strategy) in rule_list.iter() {
             let is_match;
@@ -153,7 +147,7 @@ pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
                 IpAddr::V6(_) => true,
             } {
                 is_match = match rule {
-                    TrafficMatchRule::Region(rule) => match_region(ip, rule, &mut ip_info),
+                    TrafficMatchRule::Region(rule) => match_region(ip, rule, enable, &token),
                     TrafficMatchRule::Ipv6Default => true,
                     TrafficMatchRule::Ipv4Default => false,
                     TrafficMatchRule::Default => false,
@@ -168,7 +162,7 @@ pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
                     TrafficMatchRule::Ipv4Exact(rule) => match_ipv4_exact(ip, rule),
                     TrafficMatchRule::Ipv4Masked{ip: rule, mask} => match_ipv4_masked(ip, rule, mask),
                     TrafficMatchRule::Ipv4Cidr(rule, cidr) => match_ipv4_cidr(ip, rule, *cidr),
-                    TrafficMatchRule::Region(rule) => match_region(&IpAddr::V4(*ip), rule, &mut ip_info),
+                    TrafficMatchRule::Region(rule) => match_region(&IpAddr::V4(*ip), rule, enable, &token),
                     TrafficMatchRule::Ipv4Default => true,
                     TrafficMatchRule::Ipv6Default => false,
                     TrafficMatchRule::Default => true,
