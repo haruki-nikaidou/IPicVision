@@ -9,6 +9,7 @@
 PROJECT_DIR=$(pwd)
 PROJECT_NAME="ipic_vision"
 BUILD_DIR=$PROJECT_DIR/build
+export OPENSSL_STATIC=1
 
 pushd "$PROJECT_DIR" || exit 1
 if [ ! -d "src" ]; then

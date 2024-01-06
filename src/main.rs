@@ -5,7 +5,6 @@ use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
 mod config_loader;
-mod ip;
 mod rule;
 mod handle_request;
 mod geo;
