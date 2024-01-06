@@ -1,8 +1,11 @@
 use std::sync::Arc;
-
-use crate::ip::Ipv4;
+use std::net::{IpAddr, Ipv4Addr};
+use std::ops::DerefMut;
+use ipinfo::IpInfo;
 use rand::Rng;
 use serde::{Serialize, Deserialize, Serializer, Deserializer, ser::SerializeStruct};
+use tracing::{info, warn};
+use crate::config_loader::Config;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum ImageInfo {
@@ -13,16 +16,25 @@ pub enum ImageInfo {
 #[derive(Serialize, Deserialize, Clone)]
 pub enum TrafficMatchRule {
     #[serde(rename = "ipv4_exact")]
-    Ipv4Exact(Ipv4),
+    Ipv4Exact(Ipv4Addr),
 
     #[serde(rename = "ipv4_masked")]
-    Ipv4Masked(Ipv4, [u8;4]),
+    Ipv4Masked{ip: Ipv4Addr, mask: Ipv4Addr},
 
     #[serde(rename = "ipv4_cidr")]
-    Ipv4Cidr(Ipv4, u8),
+    Ipv4Cidr(Ipv4Addr, u8),
 
     #[serde(rename = "region")]
     Region(String),
+
+    #[serde(rename = "ipv4_default")]
+    Ipv4Default,
+
+    #[serde(rename = "ipv6_default")]
+    Ipv6Default,
+
+    #[serde(rename = "region_default")]
+    Default,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -37,7 +49,7 @@ pub enum ImageInfoSelectStrategy {
 
 pub struct TrafficMatcher (TrafficMatchRule, ImageInfoSelectStrategy);
 pub type TrafficMatcherList = Vec<TrafficMatcher>;
-pub type TrafficMatchFn = dyn (Fn(&Ipv4) -> Option<ImageInfo>) + Send + Sync + 'static;
+pub type TrafficMatchFn = dyn (FnMut(&IpAddr) -> Option<ImageInfo>) + Send + Sync + 'static;
 
 impl Serialize for TrafficMatcher {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -67,27 +79,50 @@ impl<'de> Deserialize<'de> for TrafficMatcher {
     }
 }
 
-fn match_ipv4_exact(ip: &Ipv4, rule: &Ipv4) -> bool {
+fn match_ipv4_exact(ip: &Ipv4Addr, rule: &Ipv4Addr) -> bool {
     ip == rule
 }
 
-fn match_ipv4_masked(ip: &Ipv4, rule: &Ipv4, mask: &[u8;4]) -> bool {
-    Ipv4::compare(ip, rule, mask)
+fn match_ipv4_masked(ip: &Ipv4Addr, rule: &Ipv4Addr, mask: &Ipv4Addr) -> bool {
+    let ip_octets = ip.octets();
+    let rule_octets = rule.octets();
+    let mask_octets = mask.octets();
+
+    for i in 0..4 {
+        if ip_octets[i] & mask_octets[i] != rule_octets[i] & mask_octets[i] {
+            return false;
+        }
+    }
+
+    true
 }
 
-fn match_ipv4_cidr(ip: &Ipv4, rule: &Ipv4, cidr: u8) -> bool {
-    let mask = Ipv4::cidr_to_mask(cidr);
-    Ipv4::compare(ip, rule, &mask)
+fn match_ipv4_cidr(ip: &Ipv4Addr, rule: &Ipv4Addr, cidr: u8) -> bool {
+    let ip_int = u32::from(*ip);
+    let rule_int = u32::from(*rule);
+    let mask = !0u32 << (32 - cidr);
+
+    (ip_int & mask) == (rule_int & mask)
 }
 
-fn match_region(_ip: &Ipv4, _rule: &String) -> bool {
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let geo_ip_result = rt.block_on(crate::geo::get_ip_country(_ip));
-    match geo_ip_result {
-        Some(country) => {
-            country == *_rule
+fn match_region(_ip: &IpAddr, _rule: &String, client: &mut Option<IpInfo>) -> bool {
+    info!("Getting ip info for {}", _ip.to_string());
+    match client {
+        Some(client) => {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let geo_ip_result = rt.block_on(crate::geo::get_ip_country(_ip, client));
+            match geo_ip_result {
+                Some(country) => {
+                    info!("Got ip info for {}: {}", _ip.to_string(), country);
+                    country == *_rule
+                },
+                None => false
+            }
         },
-        None => false
+        None => {
+            warn!("Ip info client is not configured");
+            return false;
+        }
     }
 }
 
@@ -97,15 +132,48 @@ fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
     images[index].clone()
 }
 
-pub fn generate_match_fn(rule_list: TrafficMatcherList) -> Arc<TrafficMatchFn> {
+pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
+    let rule_list = config.traffic_matchers;
+    let enable_geo = config.ip_info_enable;
+    let geo_token = config.ip_info_token;
+    let ip_info_config = ipinfo::IpInfoConfig {
+        token: Some(geo_token),
+        ..Default::default()
+    };
+    let mut ip_info = if enable_geo {
+        Some(IpInfo::new(ip_info_config).expect("Ip Info should construct"))
+    } else {
+        None
+    };
     Arc::new(move |ip| {
         for TrafficMatcher(rule, strategy) in rule_list.iter() {
-            let is_match = match rule {
-                TrafficMatchRule::Ipv4Exact(rule) => match_ipv4_exact(ip, rule),
-                TrafficMatchRule::Ipv4Masked(rule, mask) => match_ipv4_masked(ip, rule, mask),
-                TrafficMatchRule::Ipv4Cidr(rule, cidr) => match_ipv4_cidr(ip, rule, *cidr),
-                TrafficMatchRule::Region(rule) => match_region(ip, rule),
-            };
+            let is_match;
+            if match ip {
+                IpAddr::V4(_) => false,
+                IpAddr::V6(_) => true,
+            } {
+                is_match = match rule {
+                    TrafficMatchRule::Region(rule) => match_region(ip, rule, &mut ip_info),
+                    TrafficMatchRule::Ipv6Default => true,
+                    TrafficMatchRule::Ipv4Default => false,
+                    TrafficMatchRule::Default => false,
+                    _ => false,
+                };
+            } else {
+                let ip = match ip {
+                    IpAddr::V4(ip) => ip,
+                    IpAddr::V6(_) => unreachable!(),
+                };
+                is_match = match rule {
+                    TrafficMatchRule::Ipv4Exact(rule) => match_ipv4_exact(ip, rule),
+                    TrafficMatchRule::Ipv4Masked{ip: rule, mask} => match_ipv4_masked(ip, rule, mask),
+                    TrafficMatchRule::Ipv4Cidr(rule, cidr) => match_ipv4_cidr(ip, rule, *cidr),
+                    TrafficMatchRule::Region(rule) => match_region(&IpAddr::V4(*ip), rule, &mut ip_info),
+                    TrafficMatchRule::Ipv4Default => true,
+                    TrafficMatchRule::Ipv6Default => false,
+                    TrafficMatchRule::Default => true,
+                };
+            }
 
             if is_match {
                 return match strategy {

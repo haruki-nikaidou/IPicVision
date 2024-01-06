@@ -5,11 +5,20 @@ use serde_json::Error;
 
 const CONFIG_PATH: &str = "./config.json";
 
-pub fn parse_config(config: &str) -> Result<TrafficMatcherList, Error> {
-    TrafficMatcherList::deserialize(&mut serde_json::Deserializer::from_str(config))
+#[derive(Deserialize)]
+pub struct Config {
+    pub traffic_matchers: TrafficMatcherList,
+    pub ip_info_enable: bool,
+    pub ip_info_token: String,
+    pub listen_addr: String,
 }
 
-pub fn load_config() -> Result<TrafficMatcherList, ()> {
+pub fn parse_config(config: &str) -> Result<Config, Error> {
+    let config: Config = serde_json::from_str(config)?;
+    Ok(config)
+}
+
+pub fn load_config() -> Result<Config, ()> {
     let file = match std::fs::read_to_string(CONFIG_PATH) {
         Ok(file) => file,
         Err(_) => {
