@@ -1,18 +1,19 @@
 use std::sync::Arc;
 use std::net::{IpAddr, Ipv4Addr};
 use rand::Rng;
-use serde::{Serialize, Deserialize, Serializer, Deserializer, ser::SerializeStruct};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use tracing::{error, info, warn};
 use crate::config_loader::Config;
 use crate::geo::get_ip_country;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ImageInfo {
     Path(String),
     Url(String)
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum TrafficMatchRule {
     #[serde(rename = "ipv4_exact")]
     Ipv4Exact(Ipv4Addr),
@@ -36,31 +37,52 @@ pub enum TrafficMatchRule {
     Default,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename = "image")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ImageInfoSelectStrategy {
-    #[serde(rename = "one")]
     FixToOne(ImageInfo),
-
-    #[serde(rename = "random_list")]
     Random(Vec<ImageInfo>),
+}
+
+fn parse_image_info(s: String) -> ImageInfo {
+    if s.starts_with("http://") {
+        warn!("Using http url is not recommended");
+        ImageInfo::Url(s)
+    } else if s.starts_with("https://") {
+        ImageInfo::Url(s)
+    } else {
+        ImageInfo::Path(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ImageInfoSelectStrategy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let v: Value = Deserialize::deserialize(deserializer)?;
+        match v {
+            Value::String(s) => Ok(ImageInfoSelectStrategy::FixToOne(parse_image_info(s))),
+            Value::Array(arr) => {
+                let mut images = Vec::new();
+                for item in arr {
+                    let image = match item {
+                        Value::String(s) => parse_image_info(s),
+                        _ => {
+                            return Err(serde::de::Error::custom("Invalid image info"));
+                        }
+                    };
+                    images.push(image);
+                }
+                Ok(ImageInfoSelectStrategy::Random(images))
+            },
+            _ => {
+                Err(serde::de::Error::custom("Invalid image info"))
+            }
+        }
+    }
 }
 
 pub struct TrafficMatcher (TrafficMatchRule, ImageInfoSelectStrategy);
 pub type TrafficMatcherList = Vec<TrafficMatcher>;
 pub type TrafficMatchFn = dyn (Fn(&IpAddr) -> Option<ImageInfo>) + Send + Sync + 'static;
 
-impl Serialize for TrafficMatcher {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("TrafficMatcher", 2)?;
-        state.serialize_field("role", &self.0)?;
-        state.serialize_field("image", &self.1)?;
-        state.end()
-    }
-}
 
 impl<'de> Deserialize<'de> for TrafficMatcher {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -179,3 +201,42 @@ pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
         None
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_image_info() {
+        let path = "path/to/image.png".to_string();
+        let url = "https://example.com/image.png".to_string();
+        let http_url = "http://example.com/image.png".to_string();
+        let https_url = "https://example.com/image.png".to_string();
+        assert_eq!(parse_image_info(path), ImageInfo::Path("path/to/image.png".to_string()));
+        assert_eq!(parse_image_info(url), ImageInfo::Url("https://example.com/image.png".to_string()));
+        assert_eq!(parse_image_info(http_url), ImageInfo::Url("http://example.com/image.png".to_string()));
+        assert_eq!(parse_image_info(https_url), ImageInfo::Url("https://example.com/image.png".to_string()));
+    }
+
+    #[test]
+    fn test_serialize_image_info_select_strategy() {
+        let fix_to_one = r#""path/to/image.png""#;
+        let random = r#"["path/to/image.png", "https://example.com/image.png"]"#;
+        let fix_to_one_deserialized: ImageInfoSelectStrategy = serde_json::from_str(fix_to_one).unwrap();
+        let random_deserialized: ImageInfoSelectStrategy = serde_json::from_str(random).unwrap();
+        assert_eq!(
+            fix_to_one_deserialized,
+            ImageInfoSelectStrategy::FixToOne(ImageInfo::Path("path/to/image.png".to_string()))
+        );
+        assert_eq!(
+            random_deserialized,
+            ImageInfoSelectStrategy::Random(
+                vec![
+                    ImageInfo::Path("path/to/image.png".to_string()),
+                    ImageInfo::Url("https://example.com/image.png".to_string())
+                ]
+            )
+        );
+    }
+}
+
