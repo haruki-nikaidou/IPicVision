@@ -5,7 +5,7 @@ use serde_json::Error;
 
 const CONFIG_PATH: &str = "./config.json";
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
     pub traffic_matchers: TrafficMatcherList,
     pub ip_info_enable: bool,

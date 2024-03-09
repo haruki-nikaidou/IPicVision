@@ -13,13 +13,13 @@ pub enum ImageInfo {
     Url(String)
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq)]
 pub enum TrafficMatchRule {
     #[serde(rename = "ipv4_exact")]
     Ipv4Exact(Ipv4Addr),
 
     #[serde(rename = "ipv4_masked")]
-    Ipv4Masked{ip: Ipv4Addr, mask: Ipv4Addr},
+    Ipv4Masked { ip: Ipv4Addr, mask: Ipv4Addr },
 
     #[serde(rename = "ipv4_cidr")]
     Ipv4Cidr(Ipv4Addr, u8),
@@ -71,7 +71,7 @@ impl<'de> Deserialize<'de> for ImageInfoSelectStrategy {
                     images.push(image);
                 }
                 Ok(ImageInfoSelectStrategy::Random(images))
-            },
+            }
             _ => {
                 Err(serde::de::Error::custom("Invalid image info"))
             }
@@ -79,15 +79,17 @@ impl<'de> Deserialize<'de> for ImageInfoSelectStrategy {
     }
 }
 
-pub struct TrafficMatcher (TrafficMatchRule, ImageInfoSelectStrategy);
+#[derive(Debug, Clone, PartialEq)]
+pub struct TrafficMatcher(TrafficMatchRule, ImageInfoSelectStrategy);
+
 pub type TrafficMatcherList = Vec<TrafficMatcher>;
 pub type TrafficMatchFn = dyn (Fn(&IpAddr) -> Option<ImageInfo>) + Send + Sync + 'static;
 
 
 impl<'de> Deserialize<'de> for TrafficMatcher {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
+        where
+            D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct Helper {
@@ -133,12 +135,12 @@ fn match_region(_ip: &IpAddr, _rule: &String, enable: bool, token: &String) -> b
         return false;
     }
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let country =  rt.block_on(get_ip_country(_ip, token));
+    let country = rt.block_on(get_ip_country(_ip, token));
     match country {
         Some(country) => {
             info!("Got ip info for {}: {}", _ip.to_string(), country);
             country == *_rule
-        },
+        }
         None => {
             error!("Failed to get ip info for {}", _ip.to_string());
             false
@@ -182,7 +184,7 @@ pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
                 };
                 is_match = match rule {
                     TrafficMatchRule::Ipv4Exact(rule) => match_ipv4_exact(ip, rule),
-                    TrafficMatchRule::Ipv4Masked{ip: rule, mask} => match_ipv4_masked(ip, rule, mask),
+                    TrafficMatchRule::Ipv4Masked { ip: rule, mask } => match_ipv4_masked(ip, rule, mask),
                     TrafficMatchRule::Ipv4Cidr(rule, cidr) => match_ipv4_cidr(ip, rule, *cidr),
                     TrafficMatchRule::Region(rule) => match_region(&IpAddr::V4(*ip), rule, enable, &token),
                     TrafficMatchRule::Ipv4Default => true,
@@ -219,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_image_info_select_strategy() {
+    fn test_deserialize_image_info_select_strategy() {
         let fix_to_one = r#""path/to/image.png""#;
         let random = r#"["path/to/image.png", "https://example.com/image.png"]"#;
         let fix_to_one_deserialized: ImageInfoSelectStrategy = serde_json::from_str(fix_to_one).unwrap();
@@ -233,10 +235,34 @@ mod tests {
             ImageInfoSelectStrategy::Random(
                 vec![
                     ImageInfo::Path("path/to/image.png".to_string()),
-                    ImageInfo::Url("https://example.com/image.png".to_string())
+                    ImageInfo::Url("https://example.com/image.png".to_string()),
                 ]
             )
         );
+    }
+
+    #[test]
+    fn test_traffic_match_rule_deserialize() {
+        let ipv4_exact = r#"
+        {
+            "ipv4_exact": "192.168.1.1"
+        }"#;
+        let ipv4_exact_result: TrafficMatchRule = TrafficMatchRule::Ipv4Exact(Ipv4Addr::new(192, 168, 1, 1));
+        assert_eq!(serde_json::from_str::<TrafficMatchRule>(ipv4_exact).unwrap(), ipv4_exact_result);
+
+
+        let ipv4_masked = r#"
+        {
+            "ipv4_masked": {
+                "ip": "192.168.1.1",
+                "mask": "255.255.0.0"
+            }
+        }"#;
+        let ipv4_masked_result: TrafficMatchRule = TrafficMatchRule::Ipv4Masked {
+            ip: Ipv4Addr::new(192, 168, 1, 1),
+            mask: Ipv4Addr::new(255, 255, 0, 0),
+        };
+        assert_eq!(serde_json::from_str::<TrafficMatchRule>(ipv4_masked).unwrap(), ipv4_masked_result);
     }
 }
 

@@ -18,24 +18,14 @@ A config example:
         "role": {
           "ipv4_exact": "192.168.1.1"
         },
-        "image": {
-          "random_list": [
-            {
-              "Url": "https://example.com/1.jpg"
-            },
-            {
-              "Url": "https://example.com/2.jpg"
-            }
-          ]
-        }
+        "image": [
+            "https://example.com/1.jpg",
+            "https://example.com/2.jpg"
+        ]
       },
       {
         "role": "default",
-        "image": {
-          "one": {
-            "Url": "https://example.com/1.jpg"
-          }
-        }
+        "image": "https://example.com/1.jpg"
       }
     ]
 }
@@ -67,11 +57,7 @@ The minimal config is:
     "traffic_matchers": [
       {
         "role": "default",
-        "image": {
-          "one": {
-            "Url": "https://example.com/1.jpg"
-          }
-        }
+        "image": "https://example.com/1.jpg"
       }
     ]
 }
@@ -147,11 +133,7 @@ Example1: return same image (on disk) every time.
 
 ```json
 {
-    "image": {
-        "one": {
-          "Path": "/path/to/image.jpg"
-        }
-    }
+    "image": "/path/to/image.jpg"
 }
 ```
 
@@ -159,15 +141,9 @@ Example2: return random image (on Internet as URL)
 
 ```json
 {
-    "image": {
-        "random_list": [
-          {
-            "Url": "https://example.com/1.jpg"
-          },
-          {
-            "Url": "https://example.com/2.jpg"
-          }
-        ]
-    }
+    "image": [
+        "https://example.com/1.jpg",
+        "https://example.com/2.jpg"
+    ]
 }
 ```
