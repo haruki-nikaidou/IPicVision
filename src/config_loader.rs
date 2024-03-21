@@ -8,7 +8,7 @@ const CONFIG_PATH: &str = "./config.json";
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Config {
     pub traffic_matchers: TrafficMatcherList,
-    pub ip_info_enable: bool,
+    pub ip_info_enable: Option<bool>,
     pub ip_info_token: Option<String>,
     pub listen_addr: String,
 }

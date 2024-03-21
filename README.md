@@ -19,8 +19,8 @@ A config example:
           "ipv4_exact": "192.168.1.1"
         },
         "image": [
-            "https://example.com/1.jpg",
-            "https://example.com/2.jpg"
+          "https://example.com/1.jpg",
+          "https://example.com/2.jpg"
         ]
       },
       {

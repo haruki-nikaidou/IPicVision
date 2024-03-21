@@ -156,13 +156,17 @@ fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
 
 pub fn generate_match_fn(config: Config) -> Arc<TrafficMatchFn> {
     let rule_list = config.traffic_matchers;
-    let enable = config.ip_info_enable;
+    let enable = if config.ip_info_enable.is_none() {
+        false
+    } else {
+        config.ip_info_enable.unwrap()
+    };
     let token = config.ip_info_token;
     if enable && token.is_none() {
         error!("Ip info is enabled but token is not configured");
         panic!();
     }
-    let token = token.unwrap();
+    let token = token.unwrap_or_else(|| "".to_string());
     Arc::new(move |ip| {
         for TrafficMatcher(rule, strategy) in rule_list.iter() {
             let is_match;
