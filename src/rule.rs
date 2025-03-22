@@ -149,8 +149,8 @@ fn match_region(_ip: &IpAddr, _rule: &String, enable: bool, token: &String) -> b
 }
 
 fn random_select(images: &Vec<ImageInfo>) -> ImageInfo {
-    let mut rng = rand::thread_rng();
-    let index = rng.gen_range(0..images.len());
+    let mut rng = rand::rng();
+    let index = rng.random_range(0..images.len());
     images[index].clone()
 }
 
